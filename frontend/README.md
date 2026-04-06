@@ -3,7 +3,7 @@
 ## Overview
 
 `index.html` is a single, self-contained file.  No build step, no npm, no
-dependencies.  Drop it on any HTTP/HTTPS server and open it in a browser.
+dependencies.  Drop it on any HTTP server and open it in a browser.
 
 ---
 
@@ -26,7 +26,17 @@ instance (see `server/README.md`).
 ### Install Nginx (Debian/Ubuntu)
 
 ```bash
-sudo apt update && sudo apt install -y nginx certbot python3-certbot-nginx
+sudo apt update && sudo apt install -y nginx
+```
+
+### Open port 6000 in your VPS firewall
+
+```bash
+# ufw (Ubuntu)
+sudo ufw allow 6000/tcp
+
+# Or with iptables
+sudo iptables -I INPUT -p tcp --dport 6000 -j ACCEPT
 ```
 
 ### Copy the file
@@ -39,23 +49,14 @@ sudo cp index.html /var/www/chatbot/
 ### Install the Nginx config
 
 ```bash
-# Edit nginx.conf first — replace "your-vps-domain.com" with your real domain
 sudo cp nginx.conf /etc/nginx/sites-available/chatbot
 sudo ln -s /etc/nginx/sites-available/chatbot /etc/nginx/sites-enabled/chatbot
 sudo nginx -t && sudo systemctl reload nginx
 ```
 
-### Get a free TLS certificate
-
-```bash
-sudo certbot --nginx -d your-vps-domain.com
-```
-
-Certbot will automatically edit the nginx config to add the certificate paths.
-
 ### Verify
 
-Open `https://your-vps-domain.com` in your browser. You should see the dark
+Open `http://<your-vps-ip>:6000` in your browser. You should see the dark
 chat UI.
 
 ---
@@ -66,9 +67,8 @@ Every time cloudflared is restarted with a temporary tunnel, the URL changes.
 Update `index.html` and recopy it:
 
 ```bash
-# On the VPS:
-sudo nano /var/www/chatbot/index.html   # or use scp from your machine
-sudo systemctl reload nginx             # optional, file is served statically
+sudo nano /var/www/chatbot/index.html
+# (no nginx reload needed — file is served statically)
 ```
 
 ---
@@ -81,5 +81,8 @@ sudo systemctl reload nginx             # optional, file is served statically
 | AudioContext | All modern browsers |
 | WebSocket | All modern browsers |
 
-The mic button requires `getUserMedia` which needs either **localhost** or
-**HTTPS**.  Always serve from `https://` in production.
+> **Note on microphone access**: browsers require either `localhost` or HTTPS
+> for `getUserMedia`.  If you serve over plain HTTP on port 6000, the mic
+> button will only work when accessed from `localhost` (e.g. SSH port-forward)
+> or if your browser has been explicitly granted an exception.  For remote
+> access add a TLS terminator (e.g. `nginx` with Let's Encrypt) in front.

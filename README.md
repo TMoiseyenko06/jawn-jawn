@@ -20,15 +20,15 @@ frontend is a single static HTML file served from any VPS.
 │  │ AudioContext │                      └──────────┬──────────┘ │
 │  │ (speaker out)│                                 │            │
 │  └──────────────┘   index.html served             │            │
-│         ▲           via Nginx / HTTPS             │            │
+│         ▲           via Nginx :6000               │            │
 │         │                                         │            │
 └─────────┼─────────────────────────────────────────┼────────────┘
           │                                         │ WSS
-          │ HTTPS                                   ▼
+          │ HTTP :6000                              ▼
 ┌─────────┴───────────┐              ┌──────────────────────────┐
 │  VPS (any cloud)    │              │  Vast.ai GPU instance    │
 │                     │              │                          │
-│  Nginx              │              │  FastAPI  :8000          │
+│  Nginx :6000        │              │  FastAPI  :8000          │
 │  /var/www/chatbot/  │              │  ├── Whisper STT         │
 │  index.html         │              │  ├── LLM (8B, fp16)      │
 │                     │              │  └── edge-tts            │
@@ -95,7 +95,7 @@ cloudflared tunnel --url http://localhost:8000
 sudo cp frontend/index.html /var/www/chatbot/
 ```
 
-Open `https://your-vps-domain.com` and start talking.
+Open `http://<your-vps-ip>:6000` and start talking.
 
 ---
 
