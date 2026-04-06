@@ -34,16 +34,16 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# Wait for Nginx to be ready
+# Wait for the file server to be ready
 # ---------------------------------------------------------------------------
-echo "==> Waiting for Nginx on port $TUNNEL_PORT..."
+echo "==> Waiting for file server on port $TUNNEL_PORT..."
 for i in $(seq 1 15); do
   if curl -sf "http://localhost:${TUNNEL_PORT}" >/dev/null 2>&1; then
-    echo "==> Nginx is up."
+    echo "==> Server is up."
     break
   fi
   if [ "$i" -eq 15 ]; then
-    echo "WARNING: Nginx did not respond on port $TUNNEL_PORT — starting tunnel anyway"
+    echo "WARNING: server did not respond on port $TUNNEL_PORT — starting tunnel anyway"
   fi
   sleep 1
 done
