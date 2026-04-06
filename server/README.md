@@ -33,10 +33,10 @@ git clone <your-repo> && cd <repo>/server
 # (Optional) set env vars for gated models or custom config
 export MODEL="cognitivecomputations/dolphin-2.9-llama3-8b"
 export WHISPER_MODEL="base.en"    # or "large-v3" for better accuracy
-export TTS_VOICE="en-US-GuyNeural"
+export TTS_VOICE="en-US-JennyNeural"
 export HF_TOKEN="hf_..."          # only needed for gated models
 
-chmod +x start.sh
+chmod +x start.sh tunnel.sh
 ./start.sh
 ```
 
@@ -52,41 +52,38 @@ curl http://localhost:8000/health
 
 ## 3. Expose the WebSocket via Cloudflare Tunnel
 
-Cloudflare Tunnel gives you a public `wss://` URL without opening firewall
-ports or needing a domain.
-
-### One-time setup (on the Vast.ai instance)
-
-```bash
-# Install cloudflared
-wget https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
-dpkg -i cloudflared-linux-amd64.deb
-
-# Start a temporary (no-login) tunnel — free, no account needed
-cloudflared tunnel --url http://localhost:8000
-```
-
-Cloudflare will print a URL like:
-```
-https://random-words-here.trycloudflare.com
-```
-
-Your WebSocket endpoint is then:
-```
-wss://random-words-here.trycloudflare.com/ws
-```
-
-Copy that URL into `frontend/index.html` as the value of `WS_URL`.
-
-> **Note**: The temporary tunnel URL changes every time you restart cloudflared.
-> For a stable URL, create a free Cloudflare account and set up a named tunnel
-> with `cloudflared tunnel login`.
-
-### Keep the tunnel alive (optional)
+Run `tunnel.sh` in a **second terminal** on the same instance.
+It installs `cloudflared` automatically if needed (no Cloudflare account required)
+and prints the ready-to-paste WSS URL:
 
 ```bash
-# Run in background with nohup
-nohup cloudflared tunnel --url http://localhost:8000 > tunnel.log 2>&1 &
+bash tunnel.sh
+```
+
+Output looks like:
+
+```
+============================================================
+  Tunnel is live!
+
+  Public HTTPS : https://random-words-here.trycloudflare.com
+  WebSocket    : wss://random-words-here.trycloudflare.com/ws
+
+  Paste this into frontend/index.html:
+    const WS_URL = "wss://random-words-here.trycloudflare.com/ws";
+============================================================
+```
+
+Copy that `const WS_URL` line into `frontend/index.html` and refresh the page.
+
+> **Note**: The Quick Tunnel URL changes every restart. For a persistent URL,
+> create a free Cloudflare account and use a named tunnel:
+> `cloudflared tunnel login` then `cloudflared tunnel create my-bot`
+
+### Override the default port
+
+```bash
+TUNNEL_PORT=9000 bash tunnel.sh   # if your server runs on a different port
 ```
 
 ---
@@ -97,7 +94,7 @@ nohup cloudflared tunnel --url http://localhost:8000 > tunnel.log 2>&1 &
 |---|---|---|
 | `MODEL` | `cognitivecomputations/dolphin-2.9-llama3-8b` | HuggingFace model ID |
 | `WHISPER_MODEL` | `base.en` | faster-whisper model size |
-| `TTS_VOICE` | `en-US-GuyNeural` | edge-tts voice name |
+| `TTS_VOICE` | `en-US-JennyNeural` | edge-tts voice name |
 | `HF_TOKEN` | *(unset)* | HuggingFace access token for gated models |
 
 ---
