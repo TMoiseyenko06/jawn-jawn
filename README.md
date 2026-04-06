@@ -9,33 +9,33 @@ frontend is a single static HTML file served from any VPS.
 ## Architecture
 
 ```
-┌──────────────────────────────────────────────────────────────────────┐
-│  Browser (user's device)                                             │
-│                                                                      │
-│  ┌──────────────┐  ws://<vast-ip>:<port>/ws   ┌──────────────────┐  │
-│  │ MediaRecorder│ ─────────────────────────►  │  Vast.ai GPU     │  │
-│  │  (mic input) │                             │                  │  │
-│  └──────────────┘  AUDIO:<b64> chunks         │  FastAPI  :8000  │  │
-│  ┌──────────────┐ ◄─────────────────────────  │  ├── Whisper STT │  │
-│  │ AudioContext │                             │  ├── LLM (8B)    │  │
-│  │ (speaker out)│                             │  └── XTTS/TTS    │  │
-│  └──────────────┘                             │                  │  │
-│        ▲                                      │  direct IP:port  │  │
-│        │ HTTPS (mic works)                    └──────────────────┘  │
-└────────┼─────────────────────────────────────────────────────────────┘
-         │
-         │ https://xxx.trycloudflare.com
+┌─────────────────────────────────────────────────────────────────────┐
+│  Browser (any device)                                               │
+│                                                                     │
+│  loads page + speaks/types                                          │
+│        │  ▲                                                         │
+│        │  │  WSS  (Cloudflare tunnel)                               │
+└────────┼──┼─────────────────────────────────────────────────────────┘
+         │  │
+         ▼  │
+┌────────────────────────┐
+│  VPS                   │
+│                        │
+│  FastAPI :6000         │  ← serves index.html at /
+│  /ws proxy             │  ← forwards WebSocket to Vast.ai
+│                        │
+│  cloudflared tunnel    │  ← HTTPS so mic works in browser
+└────────┬───────────────┘
+         │  WS  (direct IP:port)
          ▼
-┌─────────────────────────┐
-│  VPS                    │
-│                         │
-│  Nginx :6000            │
-│  /var/www/chatbot/      │
-│  index.html             │
-│                         │
-│  cloudflared tunnel     │  ← HTTPS so browser allows mic access
-│  (free, no account)     │
-└─────────────────────────┘
+┌────────────────────────┐
+│  Vast.ai GPU           │
+│                        │
+│  FastAPI  :8000        │
+│  ├── Whisper STT       │
+│  ├── LLM (8B, fp16)    │
+│  └── XTTS / edge-tts   │
+└────────────────────────┘
 ```
 
 ### Data flow for a voice message
@@ -77,29 +77,25 @@ chmod +x start.sh && ./start.sh
 
 See `server/README.md` for full details.
 
-### Step 3 — Get the Vast.ai WebSocket URL
+### Step 3 — Deploy the VPS proxy server
 
-On the Vast.ai instance detail page, find the port mapping for port 8000, e.g.:
-
-```
-123.45.67.89 : 12345  →  8000
-```
-
-Your WebSocket URL is `ws://123.45.67.89:12345/ws`. Set that as `WS_URL` in
-`frontend/index.html`.
-
-### Step 4 — Deploy & tunnel the frontend
+On your VPS, find the Vast.ai IP:port from the instance detail page, then:
 
 ```bash
-# On your VPS:
-sudo cp frontend/index.html /var/www/chatbot/
-# (follow frontend/README.md for Nginx setup)
-
-# Start the Cloudflare tunnel for HTTPS (enables mic in browser):
-bash frontend/tunnel.sh
+cd vps/
+export VAST_WS_URL="ws://123.45.67.89:12345/ws"
+bash serve.sh
 ```
 
-Open the `https://xxx.trycloudflare.com` URL it prints and start talking.
+In a second terminal on the VPS:
+
+```bash
+bash vps/tunnel.sh
+# Prints: https://some-words.trycloudflare.com
+```
+
+Open that URL from any device — the page loads, mic works, all traffic
+is proxied through the VPS to Vast.ai automatically.
 
 ---
 

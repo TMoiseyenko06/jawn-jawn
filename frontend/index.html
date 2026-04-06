@@ -338,13 +338,14 @@
 </head>
 <body>
 
-<!-- ===== CONFIG — change WS_URL to your Cloudflare tunnel address ===== -->
 <script>
-  const WS_URL = "wss://your-tunnel.trycloudflare.com/ws";
+  // Auto-detect WebSocket URL from the page origin — works behind any proxy or tunnel.
+  // Override by setting WS_URL manually if needed, e.g.:
+  //   const WS_URL = "wss://your-tunnel.trycloudflare.com/ws";
+  const WS_URL = location.origin.replace(/^http/, 'ws') + '/ws';
   const MAX_NEW_TOKENS = 512;
   const TEMPERATURE    = 0.7;
 </script>
-<!-- ===================================================================== -->
 
 <div id="app">
   <header>
