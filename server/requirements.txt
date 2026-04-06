@@ -6,5 +6,6 @@ accelerate>=0.30.0
 torch>=2.2.0
 faster-whisper>=1.0.0
 edge-tts>=6.1.9
+TTS>=0.22.0
 numpy>=1.26.0
 soundfile>=0.12.1
