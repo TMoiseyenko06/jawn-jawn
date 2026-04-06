@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-# tunnel.sh — start a free Cloudflare Quick Tunnel for the inference server
-# No Cloudflare account needed. Prints the WSS URL to use in frontend/index.html.
+# tunnel.sh — start a free Cloudflare Quick Tunnel for the VPS frontend
+# Gives you an HTTPS URL so the browser allows mic access (getUserMedia).
+# No Cloudflare account needed.
 
 set -euo pipefail
 
-TUNNEL_PORT="${TUNNEL_PORT:-8000}"
+TUNNEL_PORT="${TUNNEL_PORT:-6000}"
 LOG_FILE="${LOG_FILE:-/tmp/cloudflared.log}"
 
 # ---------------------------------------------------------------------------
@@ -33,45 +34,39 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# Wait for the server to be ready
+# Wait for Nginx to be ready
 # ---------------------------------------------------------------------------
-echo "==> Waiting for server on port $TUNNEL_PORT..."
-for i in $(seq 1 30); do
-  if curl -sf "http://localhost:${TUNNEL_PORT}/health" >/dev/null 2>&1; then
-    echo "==> Server is up."
+echo "==> Waiting for Nginx on port $TUNNEL_PORT..."
+for i in $(seq 1 15); do
+  if curl -sf "http://localhost:${TUNNEL_PORT}" >/dev/null 2>&1; then
+    echo "==> Nginx is up."
     break
   fi
-  if [ "$i" -eq 30 ]; then
-    echo "WARNING: server did not respond on port $TUNNEL_PORT after 30 s — starting tunnel anyway"
+  if [ "$i" -eq 15 ]; then
+    echo "WARNING: Nginx did not respond on port $TUNNEL_PORT — starting tunnel anyway"
   fi
   sleep 1
 done
 
 # ---------------------------------------------------------------------------
-# Start the tunnel, capture the public URL
+# Start the tunnel, print the public HTTPS URL
 # ---------------------------------------------------------------------------
 echo "==> Starting Cloudflare Quick Tunnel → http://localhost:${TUNNEL_PORT} ..."
-echo "    (URL changes each restart; use a named tunnel for a stable URL)"
+echo "    (URL changes each restart — mic will work over this HTTPS URL)"
 echo ""
 
-# Run cloudflared, tee to log file, and print the WSS URL as soon as it appears
 cloudflared tunnel --url "http://localhost:${TUNNEL_PORT}" 2>&1 | tee "$LOG_FILE" | while IFS= read -r line; do
   echo "$line"
-  # cloudflared prints the public URL in a line containing trycloudflare.com
   if [[ "$line" == *"trycloudflare.com"* ]]; then
-    # Extract just the https URL
     URL=$(echo "$line" | grep -oP 'https://[^\s]+trycloudflare\.com')
     if [[ -n "$URL" ]]; then
-      WSS_URL="${URL/https:\/\//wss://}/ws"
       echo ""
       echo "============================================================"
-      echo "  Tunnel is live!"
+      echo "  Frontend tunnel is live!"
       echo ""
-      echo "  Public HTTPS : $URL"
-      echo "  WebSocket    : $WSS_URL"
+      echo "  Open in browser : $URL"
       echo ""
-      echo "  Paste this into frontend/index.html:"
-      echo "    const WS_URL = \"$WSS_URL\";"
+      echo "  Mic access works over this HTTPS URL."
       echo "============================================================"
       echo ""
     fi

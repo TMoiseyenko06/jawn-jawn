@@ -9,33 +9,33 @@ frontend is a single static HTML file served from any VPS.
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│  Browser (user's device)                                        │
-│                                                                 │
-│  ┌──────────────┐  binary audio blob   ┌─────────────────────┐ │
-│  │ MediaRecorder│ ──────────────────►  │                     │ │
-│  │  (mic input) │                      │  WebSocket (WSS)    │ │
-│  └──────────────┘  AUDIO:<b64> chunks  │  Cloudflare Tunnel  │ │
-│  ┌──────────────┐ ◄──────────────────  │                     │ │
-│  │ AudioContext │                      └──────────┬──────────┘ │
-│  │ (speaker out)│                                 │            │
-│  └──────────────┘   index.html served             │            │
-│         ▲           via Nginx :6000               │            │
-│         │                                         │            │
-└─────────┼─────────────────────────────────────────┼────────────┘
-          │                                         │ WSS
-          │ HTTP :6000                              ▼
-┌─────────┴───────────┐              ┌──────────────────────────┐
-│  VPS (any cloud)    │              │  Vast.ai GPU instance    │
-│                     │              │                          │
-│  Nginx :6000        │              │  FastAPI  :8000          │
-│  /var/www/chatbot/  │              │  ├── Whisper STT         │
-│  index.html         │              │  ├── LLM (8B, fp16)      │
-│                     │              │  └── edge-tts            │
-└─────────────────────┘              │                          │
-                                     │  cloudflared tunnel      │
-                                     │  (no open ports needed)  │
-                                     └──────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────┐
+│  Browser (user's device)                                             │
+│                                                                      │
+│  ┌──────────────┐  ws://<vast-ip>:<port>/ws   ┌──────────────────┐  │
+│  │ MediaRecorder│ ─────────────────────────►  │  Vast.ai GPU     │  │
+│  │  (mic input) │                             │                  │  │
+│  └──────────────┘  AUDIO:<b64> chunks         │  FastAPI  :8000  │  │
+│  ┌──────────────┐ ◄─────────────────────────  │  ├── Whisper STT │  │
+│  │ AudioContext │                             │  ├── LLM (8B)    │  │
+│  │ (speaker out)│                             │  └── XTTS/TTS    │  │
+│  └──────────────┘                             │                  │  │
+│        ▲                                      │  direct IP:port  │  │
+│        │ HTTPS (mic works)                    └──────────────────┘  │
+└────────┼─────────────────────────────────────────────────────────────┘
+         │
+         │ https://xxx.trycloudflare.com
+         ▼
+┌─────────────────────────┐
+│  VPS                    │
+│                         │
+│  Nginx :6000            │
+│  /var/www/chatbot/      │
+│  index.html             │
+│                         │
+│  cloudflared tunnel     │  ← HTTPS so browser allows mic access
+│  (free, no account)     │
+└─────────────────────────┘
 ```
 
 ### Data flow for a voice message
@@ -77,25 +77,29 @@ chmod +x start.sh && ./start.sh
 
 See `server/README.md` for full details.
 
-### Step 3 — Create a Cloudflare Tunnel
+### Step 3 — Get the Vast.ai WebSocket URL
 
-```bash
-# On the Vast.ai instance (in a separate tmux window)
-wget https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
-dpkg -i cloudflared-linux-amd64.deb
-cloudflared tunnel --url http://localhost:8000
-# Note the wss://....trycloudflare.com URL printed
+On the Vast.ai instance detail page, find the port mapping for port 8000, e.g.:
+
+```
+123.45.67.89 : 12345  →  8000
 ```
 
-### Step 4 — Configure & serve the frontend
+Your WebSocket URL is `ws://123.45.67.89:12345/ws`. Set that as `WS_URL` in
+`frontend/index.html`.
+
+### Step 4 — Deploy & tunnel the frontend
 
 ```bash
-# Edit WS_URL in frontend/index.html
-# Deploy to your VPS (see frontend/README.md)
+# On your VPS:
 sudo cp frontend/index.html /var/www/chatbot/
+# (follow frontend/README.md for Nginx setup)
+
+# Start the Cloudflare tunnel for HTTPS (enables mic in browser):
+bash frontend/tunnel.sh
 ```
 
-Open `http://<your-vps-ip>:6000` and start talking.
+Open the `https://xxx.trycloudflare.com` URL it prints and start talking.
 
 ---
 
