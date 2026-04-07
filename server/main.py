@@ -7,6 +7,7 @@ import re
 import logging
 import subprocess
 import tempfile
+from pathlib import Path
 from threading import Thread
 from typing import Optional
 
@@ -15,7 +16,7 @@ import soundfile as sf
 import edge_tts
 import torch
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, HTMLResponse
 from faster_whisper import WhisperModel
 from transformers import (
     AutoTokenizer,
@@ -27,6 +28,13 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = FastAPI()
+
+FRONTEND_HTML = Path(__file__).parent.parent / "frontend" / "index.html"
+
+
+@app.get("/")
+async def serve_frontend():
+    return HTMLResponse(FRONTEND_HTML.read_text())
 
 # ---------------------------------------------------------------------------
 # Config
