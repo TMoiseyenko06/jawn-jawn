@@ -4,7 +4,7 @@
 
 set -euo pipefail
 
-TUNNEL_PORT="${TUNNEL_PORT:-8000}"
+TUNNEL_PORT="${TUNNEL_PORT:-6006}"
 LOG_FILE="${LOG_FILE:-/tmp/cloudflared.log}"
 
 # ---------------------------------------------------------------------------

@@ -21,7 +21,7 @@ port — no tunnel needed on this side.
    - **GPU**: RTX 3090 / A100 / A6000 (≥ 16 GB VRAM for the 8B model)
    - **Image**: `pytorch/pytorch:2.2.0-cuda12.1-cudnn8-runtime` (or similar CUDA image)
    - **Disk**: ≥ 50 GB (model weights ≈ 16 GB + Whisper + OS)
-3. Under **Port Mapping**, add port **8000** so it gets a public IP:port.
+3. Under **Port Mapping**, add port **6006** so it gets a public IP:port.
 
 ---
 
@@ -31,7 +31,7 @@ After the instance starts, Vast.ai shows you a mapped port on the instance
 detail page, e.g.:
 
 ```
-IP: 123.45.67.89   Port: 12345  →  internal 8000
+IP: 123.45.67.89   Port: 12345  →  internal 6006
 ```
 
 Your WebSocket URL is:
@@ -63,11 +63,11 @@ chmod +x start.sh
 ./start.sh
 ```
 
-The server downloads models on first run (~5–20 min) then listens on `0.0.0.0:8000`.
+The server downloads models on first run (~5–20 min) then listens on `0.0.0.0:6006`.
 
 Verify:
 ```bash
-curl http://localhost:8000/health
+curl http://localhost:6006/health
 ```
 
 ---

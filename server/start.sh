@@ -10,8 +10,8 @@ pip install --upgrade pip
 pip install -r requirements.txt
 
 echo ""
-echo "==> Starting server on 0.0.0.0:8000 ..."
+echo "==> Starting server on 0.0.0.0:6006 ..."
 echo "    Run tunnel.sh in a second terminal to expose it publicly."
 echo ""
 
-exec uvicorn main:app --host 0.0.0.0 --port 8000 --log-level info
+exec uvicorn main:app --host 0.0.0.0 --port 6006 --log-level info
