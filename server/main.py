@@ -260,9 +260,11 @@ def transcribe_audio(audio_bytes: bytes) -> str:
 
 
 def run_llm(messages, max_new_tokens, temperature, streamer):
-    inputs = llm_tokenizer.apply_chat_template(
+    out = llm_tokenizer.apply_chat_template(
         messages, add_generation_prompt=True, return_tensors="pt"
-    ).to(llm_model.device)
+    )
+    # transformers 5.x returns BatchEncoding; earlier versions return a tensor directly
+    inputs = (out["input_ids"] if hasattr(out, "__getitem__") and not isinstance(out, torch.Tensor) else out).to(llm_model.device)
     with torch.no_grad():
         llm_model.generate(
             input_ids=inputs,
