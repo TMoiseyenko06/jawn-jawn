@@ -65,8 +65,9 @@ llm_eos_token_ids: list[int] = []
 models_loaded: bool = False
 load_error: Optional[str] = None
 
-# In-memory session store — keyed by session_id, cleared on server restart
-sessions: dict[str, list[dict]] = {}
+# Single global conversation history (user + assistant turns only, no system)
+global_history: list[dict] = []
+HISTORY_CONTEXT = 6  # messages kept in LLM context (3 pairs)
 
 # XTTS is loaded lazily on first voice-clone request
 xtts_model = None
@@ -324,7 +325,6 @@ async def websocket_endpoint(websocket: WebSocket):
 
     max_new_tokens = 512
     temperature    = 0.7
-    session_id     = None
 
     # Read system prompt from file on every connection
     _prompt_file = Path(__file__).parent / "system_prompt.txt"
@@ -334,8 +334,8 @@ async def websocket_endpoint(websocket: WebSocket):
         system_prompt = SYSTEM_PROMPT
 
     # Per-connection voice clone state
-    voice_gpt_latent   = None
-    voice_speaker_emb  = None
+    voice_gpt_latent  = None
+    voice_speaker_emb = None
 
     # ---- config handshake ----
     try:
@@ -351,36 +351,31 @@ async def websocket_endpoint(websocket: WebSocket):
             if cfg.get("type") == "config":
                 max_new_tokens = int(cfg.get("max_tokens", max_new_tokens))
                 temperature    = float(cfg.get("temperature", temperature))
-                session_id     = cfg.get("session_id")
         except (json.JSONDecodeError, ValueError):
             pass
     elif "bytes" in raw:
         first_binary = raw
 
-    # Restore or create chat history for this session
-    if session_id and session_id in sessions:
-        chat_history = sessions[session_id]
-        # Update system prompt in case it changed
-        if chat_history and chat_history[0]["role"] == "system":
-            chat_history[0]["content"] = system_prompt
-        logger.info("Resumed session %s (%d messages)", session_id, len(chat_history))
-    else:
-        chat_history = [{"role": "system", "content": system_prompt}]
-        if session_id:
-            sessions[session_id] = chat_history
-            logger.info("New session %s", session_id)
+    # Send last 3 exchanges to the frontend so it can re-render them
+    if global_history:
+        await websocket.send_text(json.dumps({
+            "type": "history",
+            "messages": global_history[-HISTORY_CONTEXT:]
+        }))
 
     # ---- per-turn handler ----
     async def handle_turn(text_input: str):
-        nonlocal chat_history, voice_gpt_latent, voice_speaker_emb
-        chat_history.append({"role": "user", "content": text_input})
+        nonlocal voice_gpt_latent, voice_speaker_emb
+        global_history.append({"role": "user", "content": text_input})
 
         streamer = TextIteratorStreamer(
             llm_tokenizer, skip_prompt=True, skip_special_tokens=True
         )
+        # Build context: system prompt + last N history messages
+        context = [{"role": "system", "content": system_prompt}] + global_history[-HISTORY_CONTEXT:]
         Thread(
             target=run_llm,
-            args=(chat_history, max_new_tokens, temperature, streamer),
+            args=(context, max_new_tokens, temperature, streamer),
             daemon=True,
         ).start()
 
@@ -416,9 +411,7 @@ async def websocket_endpoint(websocket: WebSocket):
             except Exception as err:
                 logger.warning("TTS remainder error: %s", err)
 
-        chat_history.append({"role": "assistant", "content": full_response})
-        if session_id:
-            sessions[session_id] = chat_history
+        global_history.append({"role": "assistant", "content": full_response})
         await websocket.send_text("[END]")
 
     # ---- message dispatcher ----

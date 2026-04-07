@@ -393,19 +393,6 @@
 
 <script>
 // =====================================================================
-// Session ID — persists across refreshes, cleared when browser storage is wiped
-// =====================================================================
-function getSessionId() {
-  let id = localStorage.getItem('jawn_session_id');
-  if (!id) {
-    id = crypto.randomUUID();
-    localStorage.setItem('jawn_session_id', id);
-  }
-  return id;
-}
-const SESSION_ID = getSessionId();
-
-// =====================================================================
 // State
 // =====================================================================
 let ws = null;
@@ -442,12 +429,10 @@ function connect() {
   ws.onopen = () => {
     setStatus("connected", "Connected");
     reconnectOverlay.classList.remove("active");
-    // Send config handshake with session ID for memory persistence
     ws.send(JSON.stringify({
       type: "config",
       max_tokens: MAX_NEW_TOKENS,
       temperature: TEMPERATURE,
-      session_id: SESSION_ID,
     }));
   };
 
@@ -484,6 +469,11 @@ function handleMessage(event) {
     // Try JSON
     try {
       const msg = JSON.parse(data);
+
+      if (msg.type === "history") {
+        msg.messages.forEach(m => addMessage(m.role === "user" ? "user" : "bot", m.content));
+        return;
+      }
 
       if (msg.type === "transcript") {
         // Replace the "transcribing…" placeholder in last user bubble
