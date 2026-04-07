@@ -1,11 +1,10 @@
 #!/usr/bin/env bash
-# tunnel.sh — expose the inference server (+ frontend) via Cloudflare Quick Tunnel
-# No Cloudflare account needed. Run this in a second terminal after start.sh.
+# tunnel.sh — expose the server via Cloudflare Quick Tunnel
+# No Cloudflare account needed. The public HTTPS URL will appear in the output below.
 
 set -euo pipefail
 
 TUNNEL_PORT="${TUNNEL_PORT:-6006}"
-LOG_FILE="${LOG_FILE:-/tmp/cloudflared.log}"
 
 # ---------------------------------------------------------------------------
 # Install cloudflared if not present
@@ -16,22 +15,17 @@ if ! command -v cloudflared &>/dev/null; then
   case "$ARCH" in
     x86_64)  PKG="cloudflared-linux-amd64.deb" ;;
     aarch64) PKG="cloudflared-linux-arm64.deb"  ;;
-    *)
-      echo "ERROR: unsupported architecture: $ARCH"
-      exit 1
-      ;;
+    *)       echo "ERROR: unsupported architecture: $ARCH"; exit 1 ;;
   esac
   TMP_DEB="/tmp/${PKG}"
   curl -fsSL "https://github.com/cloudflare/cloudflared/releases/latest/download/${PKG}" -o "$TMP_DEB"
   dpkg -i "$TMP_DEB"
   rm -f "$TMP_DEB"
   echo "==> cloudflared installed: $(cloudflared --version)"
-else
-  echo "==> cloudflared already installed: $(cloudflared --version)"
 fi
 
 # ---------------------------------------------------------------------------
-# Wait for the server to be ready
+# Wait for the server
 # ---------------------------------------------------------------------------
 echo "==> Waiting for server on port $TUNNEL_PORT..."
 for i in $(seq 1 60); do
@@ -39,33 +33,15 @@ for i in $(seq 1 60); do
     echo "==> Server is up."
     break
   fi
-  if [ "$i" -eq 60 ]; then
-    echo "WARNING: server did not respond after 60 s — starting tunnel anyway"
-  fi
+  [ "$i" -eq 60 ] && echo "WARNING: server not responding — starting tunnel anyway"
   sleep 1
 done
 
 # ---------------------------------------------------------------------------
-# Start the tunnel
+# Start tunnel — the trycloudflare.com URL will appear in the output below
 # ---------------------------------------------------------------------------
-echo "==> Starting Cloudflare Quick Tunnel → http://localhost:${TUNNEL_PORT} ..."
+echo ""
+echo "==> Tunnel starting — look for the trycloudflare.com URL below:"
 echo ""
 
-cloudflared tunnel --url "http://localhost:${TUNNEL_PORT}" 2>&1 | tee "$LOG_FILE" | while IFS= read -r line; do
-  echo "$line"
-  if [[ "$line" == *"trycloudflare.com"* ]]; then
-    URL=$(echo "$line" | grep -oP 'https://[^\s]+trycloudflare\.com')
-    if [[ -n "$URL" ]]; then
-      echo ""
-      echo "============================================================"
-      echo "  Tunnel is live!"
-      echo ""
-      echo "  Open in browser : $URL"
-      echo "  WebSocket       : ${URL/https/wss}/ws"
-      echo ""
-      echo "  Share this URL — mic works because it's HTTPS."
-      echo "============================================================"
-      echo ""
-    fi
-  fi
-done
+exec cloudflared tunnel --url "http://localhost:${TUNNEL_PORT}"
