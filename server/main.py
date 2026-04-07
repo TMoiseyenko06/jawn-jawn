@@ -314,7 +314,10 @@ async def websocket_endpoint(websocket: WebSocket):
 
     max_new_tokens = 512
     temperature    = 0.7
-    chat_history: list[dict] = [{"role": "system", "content": SYSTEM_PROMPT}]
+    # Re-read from env each connection so you can change .env and reconnect
+    # without restarting the server
+    system_prompt = os.environ.get("SYSTEM_PROMPT", SYSTEM_PROMPT)
+    chat_history: list[dict] = [{"role": "system", "content": system_prompt}]
 
     # Per-connection voice clone state
     voice_gpt_latent   = None
