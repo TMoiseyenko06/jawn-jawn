@@ -65,6 +65,9 @@ llm_eos_token_ids: list[int] = []
 models_loaded: bool = False
 load_error: Optional[str] = None
 
+# In-memory session store — keyed by session_id, cleared on server restart
+sessions: dict[str, list[dict]] = {}
+
 # XTTS is loaded lazily on first voice-clone request
 xtts_model = None
 _xtts_lock: Optional[asyncio.Lock] = None
@@ -321,13 +324,14 @@ async def websocket_endpoint(websocket: WebSocket):
 
     max_new_tokens = 512
     temperature    = 0.7
-    # Read system prompt from file on every connection — just edit the file and reconnect
+    session_id     = None
+
+    # Read system prompt from file on every connection
     _prompt_file = Path(__file__).parent / "system_prompt.txt"
     try:
         system_prompt = _prompt_file.read_text().strip()
     except FileNotFoundError:
         system_prompt = SYSTEM_PROMPT
-    chat_history: list[dict] = [{"role": "system", "content": system_prompt}]
 
     # Per-connection voice clone state
     voice_gpt_latent   = None
@@ -347,10 +351,24 @@ async def websocket_endpoint(websocket: WebSocket):
             if cfg.get("type") == "config":
                 max_new_tokens = int(cfg.get("max_tokens", max_new_tokens))
                 temperature    = float(cfg.get("temperature", temperature))
+                session_id     = cfg.get("session_id")
         except (json.JSONDecodeError, ValueError):
             pass
     elif "bytes" in raw:
         first_binary = raw
+
+    # Restore or create chat history for this session
+    if session_id and session_id in sessions:
+        chat_history = sessions[session_id]
+        # Update system prompt in case it changed
+        if chat_history and chat_history[0]["role"] == "system":
+            chat_history[0]["content"] = system_prompt
+        logger.info("Resumed session %s (%d messages)", session_id, len(chat_history))
+    else:
+        chat_history = [{"role": "system", "content": system_prompt}]
+        if session_id:
+            sessions[session_id] = chat_history
+            logger.info("New session %s", session_id)
 
     # ---- per-turn handler ----
     async def handle_turn(text_input: str):
@@ -399,6 +417,8 @@ async def websocket_endpoint(websocket: WebSocket):
                 logger.warning("TTS remainder error: %s", err)
 
         chat_history.append({"role": "assistant", "content": full_response})
+        if session_id:
+            sessions[session_id] = chat_history
         await websocket.send_text("[END]")
 
     # ---- message dispatcher ----
