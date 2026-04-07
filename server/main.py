@@ -282,10 +282,17 @@ def run_llm(messages, max_new_tokens, temperature, streamer):
         messages, add_generation_prompt=True, return_tensors="pt"
     )
     # transformers 5.x returns BatchEncoding; earlier versions return a tensor directly
-    inputs = (out["input_ids"] if hasattr(out, "__getitem__") and not isinstance(out, torch.Tensor) else out).to(llm_model.device)
+    if isinstance(out, torch.Tensor):
+        input_ids = out.to(llm_model.device)
+        attention_mask = torch.ones_like(input_ids)
+    else:
+        input_ids = out["input_ids"].to(llm_model.device)
+        attention_mask = out.get("attention_mask", torch.ones_like(input_ids)).to(llm_model.device)
+
     with torch.no_grad():
         llm_model.generate(
-            input_ids=inputs,
+            input_ids=input_ids,
+            attention_mask=attention_mask,
             streamer=streamer,
             max_new_tokens=max_new_tokens,
             do_sample=temperature > 0,

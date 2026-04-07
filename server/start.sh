@@ -4,13 +4,15 @@
 
 set -euo pipefail
 
-# Load .env if present
+# Load .env if present — handles quoted and unquoted values, skips comments
 if [ -f .env ]; then
   echo "==> Loading .env ..."
-  set -a
-  # shellcheck source=/dev/null
-  source .env
-  set +a
+  while IFS= read -r line || [ -n "$line" ]; do
+    [[ "$line" =~ ^[[:space:]]*$ ]] && continue
+    [[ "$line" =~ ^[[:space:]]*# ]] && continue
+    line="${line#"${line%%[![:space:]]*}"}"
+    export "$line"
+  done < .env
 fi
 
 echo "==> Installing Python dependencies..."

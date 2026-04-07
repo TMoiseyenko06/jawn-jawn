@@ -4,10 +4,17 @@
 
 set -euo pipefail
 
-# Load .env if present
+# Load .env if present — handles quoted and unquoted values, skips comments
 if [ -f .env ]; then
   echo "==> Loading .env ..."
-  set -a; source .env; set +a
+  while IFS= read -r line || [ -n "$line" ]; do
+    # skip blank lines and comments
+    [[ "$line" =~ ^[[:space:]]*$ ]] && continue
+    [[ "$line" =~ ^[[:space:]]*# ]] && continue
+    # strip leading/trailing whitespace then export
+    line="${line#"${line%%[![:space:]]*}"}"
+    export "$line"
+  done < .env
 fi
 
 # ---------------------------------------------------------------------------
