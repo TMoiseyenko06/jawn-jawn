@@ -61,6 +61,7 @@ os.environ.setdefault("COQUI_TOS_AGREED", "1")
 whisper_model: Optional[WhisperModel] = None
 llm_tokenizer: Optional[AutoTokenizer] = None
 llm_model: Optional[AutoModelForCausalLM] = None
+llm_eos_token_ids: list[int] = []
 models_loaded: bool = False
 load_error: Optional[str] = None
 
@@ -71,7 +72,7 @@ _xtts_lock: Optional[asyncio.Lock] = None
 
 @app.on_event("startup")
 async def load_models():
-    global whisper_model, llm_tokenizer, llm_model, models_loaded, load_error, _xtts_lock
+    global whisper_model, llm_tokenizer, llm_model, llm_eos_token_ids, models_loaded, load_error, _xtts_lock
     _xtts_lock = asyncio.Lock()
     try:
         logger.info("Loading Whisper model: %s", WHISPER_MODEL_SIZE)
@@ -91,7 +92,18 @@ async def load_models():
             token=HF_TOKEN,
         )
         llm_model.eval()
-        logger.info("LLM loaded.")
+
+        # Build EOS token list — include the base EOS plus any end-of-turn tokens
+        # the model uses (e.g. <|eot_id|> for Llama 3, <|im_end|> for ChatML).
+        eos_ids = set()
+        if llm_tokenizer.eos_token_id is not None:
+            eos_ids.add(llm_tokenizer.eos_token_id)
+        for special in ("<|eot_id|>", "<|im_end|>", "<|end|>"):
+            tid = llm_tokenizer.convert_tokens_to_ids(special)
+            if tid and tid != llm_tokenizer.unk_token_id:
+                eos_ids.add(tid)
+        llm_eos_token_ids = list(eos_ids)
+        logger.info("LLM loaded. EOS token IDs: %s", llm_eos_token_ids)
         models_loaded = True
     except Exception as exc:
         load_error = str(exc)
@@ -278,6 +290,7 @@ def run_llm(messages, max_new_tokens, temperature, streamer):
             max_new_tokens=max_new_tokens,
             do_sample=temperature > 0,
             temperature=temperature if temperature > 0 else 1.0,
+            eos_token_id=llm_eos_token_ids,
             pad_token_id=llm_tokenizer.eos_token_id,
         )
 
