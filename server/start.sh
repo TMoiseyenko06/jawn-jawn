@@ -1,9 +1,17 @@
 #!/usr/bin/env bash
 # start.sh — install deps and launch the server
-# The server serves the frontend at / and handles WebSocket at /ws.
-# Run tunnel.sh in a second terminal to get a public HTTPS URL.
+# Copy .env.example to .env and fill in your values before running.
 
 set -euo pipefail
+
+# Load .env if present
+if [ -f .env ]; then
+  echo "==> Loading .env ..."
+  set -a
+  # shellcheck source=/dev/null
+  source .env
+  set +a
+fi
 
 echo "==> Installing Python dependencies..."
 pip install --upgrade pip
