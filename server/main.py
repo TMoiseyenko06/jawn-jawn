@@ -321,9 +321,12 @@ async def websocket_endpoint(websocket: WebSocket):
 
     max_new_tokens = 512
     temperature    = 0.7
-    # Re-read from env each connection so you can change .env and reconnect
-    # without restarting the server
-    system_prompt = os.environ.get("SYSTEM_PROMPT", SYSTEM_PROMPT)
+    # Read system prompt from file on every connection — just edit the file and reconnect
+    _prompt_file = Path(__file__).parent / "system_prompt.txt"
+    try:
+        system_prompt = _prompt_file.read_text().strip()
+    except FileNotFoundError:
+        system_prompt = SYSTEM_PROMPT
     chat_history: list[dict] = [{"role": "system", "content": system_prompt}]
 
     # Per-connection voice clone state
