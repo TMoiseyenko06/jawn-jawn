@@ -44,6 +44,12 @@ MODEL_NAME        = os.environ.get("MODEL", "cognitivecomputations/dolphin-2.9-l
 WHISPER_MODEL_SIZE = os.environ.get("WHISPER_MODEL", "base.en")
 TTS_VOICE         = os.environ.get("TTS_VOICE", "en-US-JennyNeural")   # female default
 HF_TOKEN          = os.environ.get("HF_TOKEN", None)
+SYSTEM_PROMPT     = os.environ.get(
+    "SYSTEM_PROMPT",
+    "You are a helpful, conversational voice assistant. "
+    "Keep your responses concise and natural — you are speaking aloud, not writing. "
+    "Avoid bullet points, markdown, or code blocks unless explicitly asked."
+)
 
 # Tell Coqui TTS we accept their terms so loading is non-interactive
 os.environ.setdefault("COQUI_TOS_AGREED", "1")
@@ -295,7 +301,7 @@ async def websocket_endpoint(websocket: WebSocket):
 
     max_new_tokens = 512
     temperature    = 0.7
-    chat_history: list[dict] = []
+    chat_history: list[dict] = [{"role": "system", "content": SYSTEM_PROMPT}]
 
     # Per-connection voice clone state
     voice_gpt_latent   = None
