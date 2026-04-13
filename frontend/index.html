@@ -196,6 +196,13 @@
     border: 1px solid var(--border);
   }
 
+  /* Action text — *like this* */
+  .action-text {
+    font-style: italic;
+    color: #9d8cff;
+    opacity: .85;
+  }
+
   /* Typing indicator */
   .typing-dots span {
     display: inline-block;
@@ -482,7 +489,12 @@ function handleMessage(event) {
       }
 
       if (msg.type === "token") {
-        appendToken(msg.text);
+        appendToken(msg.text, false);
+        return;
+      }
+
+      if (msg.type === "action_token") {
+        appendToken(msg.text, true);
         return;
       }
 
@@ -559,23 +571,43 @@ function startBotBubble() {
   // Will be filled by appendToken
 }
 
-function appendToken(token) {
+function appendToken(token, isAction = false) {
   if (!currentBotBubble) {
     startBotBubble();
   }
-  // Remove typing indicator on first real token
   const dots = currentBotBubble.querySelector(".typing-dots");
   if (dots) dots.remove();
 
-  currentBotBubble.textContent += token;
+  if (isAction) {
+    // Find or create a trailing action span
+    let span = currentBotBubble.querySelector("span.action-text:last-child");
+    if (!span) {
+      span = document.createElement("span");
+      span.className = "action-text";
+      span.textContent = "*";
+      currentBotBubble.appendChild(span);
+    }
+    span.textContent += token;
+  } else {
+    // Close any open action span first
+    const lastChild = currentBotBubble.lastChild;
+    if (lastChild && lastChild.nodeType === Node.ELEMENT_NODE && lastChild.classList.contains("action-text")) {
+      lastChild.textContent += "*";  // close the asterisk
+    }
+    currentBotBubble.appendChild(document.createTextNode(token));
+  }
   scrollBottom();
 }
 
 function finalizeBotBubble() {
   if (currentBotBubble) {
-    // Remove typing indicator if still there (e.g., empty response)
     const dots = currentBotBubble.querySelector(".typing-dots");
     if (dots) dots.remove();
+    // Close any unclosed action span
+    const lastChild = currentBotBubble.lastChild;
+    if (lastChild && lastChild.nodeType === Node.ELEMENT_NODE && lastChild.classList.contains("action-text")) {
+      if (!lastChild.textContent.endsWith("*")) lastChild.textContent += "*";
+    }
     if (!currentBotBubble.textContent.trim()) {
       currentBotBubble.textContent = "(no response)";
     }

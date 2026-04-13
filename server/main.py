@@ -379,37 +379,41 @@ async def websocket_endpoint(websocket: WebSocket):
             daemon=True,
         ).start()
 
-        full_response  = ""
-        sentence_buffer = ""
+        full_response   = ""
+        sentence_buffer = ""   # spoken text only
+        in_action       = False
 
-        for token in streamer:
-            full_response   += token
-            sentence_buffer += token
-            await websocket.send_text(json.dumps({"type": "token", "text": token}))
-
-            complete, sentence_buffer = split_into_sentences(sentence_buffer)
-            for sentence in complete:
-                sentence = sentence.strip()
-                if sentence:
-                    try:
-                        audio = await synthesize_sentence(
-                            sentence, voice_gpt_latent, voice_speaker_emb
-                        )
-                        b64 = base64.b64encode(audio).decode()
-                        await websocket.send_text(f"AUDIO:{b64}")
-                    except Exception as err:
-                        logger.warning("TTS error: %s", err)
-
-        remainder = sentence_buffer.strip()
-        if remainder:
+        async def flush_spoken(text: str):
+            """Send a spoken sentence to TTS and stream audio."""
+            text = text.strip()
+            if not text:
+                return
             try:
-                audio = await synthesize_sentence(
-                    remainder, voice_gpt_latent, voice_speaker_emb
-                )
+                audio = await synthesize_sentence(text, voice_gpt_latent, voice_speaker_emb)
                 b64 = base64.b64encode(audio).decode()
                 await websocket.send_text(f"AUDIO:{b64}")
             except Exception as err:
-                logger.warning("TTS remainder error: %s", err)
+                logger.warning("TTS error: %s", err)
+
+        for raw_token in streamer:
+            full_response += raw_token
+            # Split on * to detect action boundaries within a single token
+            segments = raw_token.split("*")
+            for i, seg in enumerate(segments):
+                if seg:
+                    msg_type = "action_token" if in_action else "token"
+                    await websocket.send_text(json.dumps({"type": msg_type, "text": seg}))
+                    if not in_action:
+                        sentence_buffer += seg
+                        complete, sentence_buffer = split_into_sentences(sentence_buffer)
+                        for sentence in complete:
+                            await flush_spoken(sentence)
+                # Every * toggles action mode
+                if i < len(segments) - 1:
+                    in_action = not in_action
+
+        # Flush remaining spoken text
+        await flush_spoken(sentence_buffer)
 
         global_history.append({"role": "assistant", "content": full_response})
         await websocket.send_text("[END]")
