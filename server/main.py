@@ -11,6 +11,7 @@ from pathlib import Path
 from threading import Thread
 from typing import Optional
 
+import queue
 import numpy as np
 import soundfile as sf
 import edge_tts
@@ -18,11 +19,7 @@ import torch
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse, HTMLResponse
 from faster_whisper import WhisperModel
-from transformers import (
-    AutoTokenizer,
-    AutoModelForCausalLM,
-    TextIteratorStreamer,
-)
+from llama_cpp import Llama
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -40,10 +37,13 @@ async def serve_frontend():
 # Config
 # ---------------------------------------------------------------------------
 
-MODEL_NAME        = os.environ.get("MODEL", "cognitivecomputations/dolphin-2.9-llama3-8b")
+MODEL_NAME        = os.environ.get("MODEL", "themradermacher/MN-Violet-Lotus-12B-GGUF")
+GGUF_FILE         = os.environ.get("GGUF_FILE", "*Q4_K_M.gguf")
 WHISPER_MODEL_SIZE = os.environ.get("WHISPER_MODEL", "base.en")
-TTS_VOICE         = os.environ.get("TTS_VOICE", "en-US-JennyNeural")   # female default
+TTS_VOICE         = os.environ.get("TTS_VOICE", "en-US-JennyNeural")
 HF_TOKEN          = os.environ.get("HF_TOKEN", None)
+N_CTX             = int(os.environ.get("N_CTX", "4096"))
+N_GPU_LAYERS      = int(os.environ.get("N_GPU_LAYERS", "-1"))  # -1 = all layers on GPU
 SYSTEM_PROMPT     = os.environ.get(
     "SYSTEM_PROMPT",
     "You are a helpful, conversational voice assistant. "
@@ -59,9 +59,7 @@ os.environ.setdefault("COQUI_TOS_AGREED", "1")
 # ---------------------------------------------------------------------------
 
 whisper_model: Optional[WhisperModel] = None
-llm_tokenizer: Optional[AutoTokenizer] = None
-llm_model: Optional[AutoModelForCausalLM] = None
-llm_eos_token_ids: list[int] = []
+llm_model: Optional[Llama] = None
 models_loaded: bool = False
 load_error: Optional[str] = None
 
@@ -76,7 +74,7 @@ _xtts_lock: Optional[asyncio.Lock] = None
 
 @app.on_event("startup")
 async def load_models():
-    global whisper_model, llm_tokenizer, llm_model, llm_eos_token_ids, models_loaded, load_error, _xtts_lock
+    global whisper_model, llm_model, models_loaded, load_error, _xtts_lock
     _xtts_lock = asyncio.Lock()
     try:
         logger.info("Loading Whisper model: %s", WHISPER_MODEL_SIZE)
@@ -87,27 +85,15 @@ async def load_models():
         )
         logger.info("Whisper loaded.")
 
-        logger.info("Loading LLM: %s", MODEL_NAME)
-        llm_tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME, token=HF_TOKEN)
-        llm_model = AutoModelForCausalLM.from_pretrained(
-            MODEL_NAME,
-            torch_dtype=torch.float16,
-            device_map="auto",
-            token=HF_TOKEN,
+        logger.info("Loading LLM from %s (file: %s) ...", MODEL_NAME, GGUF_FILE)
+        llm_model = Llama.from_pretrained(
+            repo_id=MODEL_NAME,
+            filename=GGUF_FILE,
+            n_gpu_layers=N_GPU_LAYERS,
+            n_ctx=N_CTX,
+            verbose=False,
         )
-        llm_model.eval()
-
-        # Build EOS token list — include the base EOS plus any end-of-turn tokens
-        # the model uses (e.g. <|eot_id|> for Llama 3, <|im_end|> for ChatML).
-        eos_ids = set()
-        if llm_tokenizer.eos_token_id is not None:
-            eos_ids.add(llm_tokenizer.eos_token_id)
-        for special in ("<|eot_id|>", "<|im_end|>", "<|end|>"):
-            tid = llm_tokenizer.convert_tokens_to_ids(special)
-            if tid and tid != llm_tokenizer.unk_token_id:
-                eos_ids.add(tid)
-        llm_eos_token_ids = list(eos_ids)
-        logger.info("LLM loaded. EOS token IDs: %s", llm_eos_token_ids)
+        logger.info("LLM loaded.")
         models_loaded = True
     except Exception as exc:
         load_error = str(exc)
@@ -281,29 +267,23 @@ def transcribe_audio(audio_bytes: bytes) -> str:
         os.unlink(tmp_path)
 
 
-def run_llm(messages, max_new_tokens, temperature, streamer):
-    out = llm_tokenizer.apply_chat_template(
-        messages, add_generation_prompt=True, return_tensors="pt"
-    )
-    # transformers 5.x returns BatchEncoding; earlier versions return a tensor directly
-    if isinstance(out, torch.Tensor):
-        input_ids = out.to(llm_model.device)
-        attention_mask = torch.ones_like(input_ids)
-    else:
-        input_ids = out["input_ids"].to(llm_model.device)
-        attention_mask = out.get("attention_mask", torch.ones_like(input_ids)).to(llm_model.device)
-
-    with torch.no_grad():
-        llm_model.generate(
-            input_ids=input_ids,
-            attention_mask=attention_mask,
-            streamer=streamer,
-            max_new_tokens=max_new_tokens,
-            do_sample=temperature > 0,
+def run_llm(messages, max_new_tokens, temperature, token_queue):
+    try:
+        stream = llm_model.create_chat_completion(
+            messages=messages,
+            max_tokens=max_new_tokens,
             temperature=temperature if temperature > 0 else 1.0,
-            eos_token_id=llm_eos_token_ids,
-            pad_token_id=llm_tokenizer.eos_token_id,
+            stream=True,
         )
+        for chunk in stream:
+            delta = chunk["choices"][0]["delta"]
+            content = delta.get("content", "")
+            if content:
+                token_queue.put(content)
+    except Exception as exc:
+        logger.error("LLM error: %s", exc)
+    finally:
+        token_queue.put(None)
 
 
 def split_into_sentences(text: str) -> tuple[list[str], str]:
@@ -368,20 +348,19 @@ async def websocket_endpoint(websocket: WebSocket):
         nonlocal voice_gpt_latent, voice_speaker_emb
         global_history.append({"role": "user", "content": text_input})
 
-        streamer = TextIteratorStreamer(
-            llm_tokenizer, skip_prompt=True, skip_special_tokens=True
-        )
         # Build context: system prompt + last N history messages
         context = [{"role": "system", "content": system_prompt}] + global_history[-HISTORY_CONTEXT:]
+        token_q: queue.Queue = queue.Queue()
         Thread(
             target=run_llm,
-            args=(context, max_new_tokens, temperature, streamer),
+            args=(context, max_new_tokens, temperature, token_q),
             daemon=True,
         ).start()
 
         full_response   = ""
         sentence_buffer = ""   # spoken text only
         in_action       = False
+        loop = asyncio.get_event_loop()
 
         async def flush_spoken(text: str):
             """Send a spoken sentence to TTS and stream audio."""
@@ -395,7 +374,10 @@ async def websocket_endpoint(websocket: WebSocket):
             except Exception as err:
                 logger.warning("TTS error: %s", err)
 
-        for raw_token in streamer:
+        while True:
+            raw_token = await loop.run_in_executor(None, token_q.get)
+            if raw_token is None:
+                break
             full_response += raw_token
             # Split on * to detect action boundaries within a single token
             segments = raw_token.split("*")

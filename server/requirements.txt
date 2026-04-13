@@ -1,11 +1,7 @@
 fastapi
 uvicorn[standard]
 websockets
-transformers
-accelerate
 torch
-auto-gptq
-optimum
 faster-whisper
 edge-tts
 coqui-tts

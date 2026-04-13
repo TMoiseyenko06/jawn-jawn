@@ -22,6 +22,8 @@ fi
 # ---------------------------------------------------------------------------
 echo "==> Installing Python dependencies..."
 pip install --upgrade pip -q
+# llama-cpp-python must be built with CUDA support
+CMAKE_ARGS="-DGGML_CUDA=on" pip install llama-cpp-python --upgrade -q
 pip install -r requirements.txt -q
 
 # ---------------------------------------------------------------------------
