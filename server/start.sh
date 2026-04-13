@@ -17,7 +17,7 @@ fi
 
 echo "==> Installing Python dependencies..."
 pip install --upgrade pip
-CMAKE_ARGS="-DGGML_CUDA=on" pip install llama-cpp-python --upgrade
+CMAKE_ARGS="-DGGML_CUDA=on -DCMAKE_CUDA_ARCHITECTURES=120" pip install llama-cpp-python --upgrade
 pip install -r requirements.txt
 
 echo ""
