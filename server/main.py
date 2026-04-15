@@ -92,6 +92,7 @@ async def load_models():
             n_gpu_layers=N_GPU_LAYERS,
             n_ctx=N_CTX,
             verbose=False,
+            token=HF_TOKEN,
         )
         logger.info("LLM loaded.")
         models_loaded = True
