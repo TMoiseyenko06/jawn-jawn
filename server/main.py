@@ -318,8 +318,9 @@ async def websocket_endpoint(websocket: WebSocket):
     voice_speaker_emb = None
 
     # ---- config handshake ----
+    # Give the user up to 5 minutes to fill out the setup form before timing out.
     try:
-        raw = await asyncio.wait_for(websocket.receive(), timeout=10.0)
+        raw = await asyncio.wait_for(websocket.receive(), timeout=300.0)
     except asyncio.TimeoutError:
         await websocket.close(code=1008)
         return
@@ -331,6 +332,9 @@ async def websocket_endpoint(websocket: WebSocket):
             if cfg.get("type") == "config":
                 max_new_tokens = int(cfg.get("max_tokens", max_new_tokens))
                 temperature    = float(cfg.get("temperature", temperature))
+                # Frontend can override the system prompt set in system_prompt.txt
+                if cfg.get("system_prompt"):
+                    system_prompt = cfg["system_prompt"].strip()
         except (json.JSONDecodeError, ValueError):
             pass
     elif "bytes" in raw:
